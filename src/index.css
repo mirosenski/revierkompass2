@@ -19,3 +19,25 @@
     @apply backdrop-blur-md bg-white/10 dark:bg-gray-900/10 border border-white/20;
   }
 }
+
+/* Leaflet CSS */
+@import 'leaflet/dist/leaflet.css';
+@import 'leaflet-routing-machine/dist/leaflet-routing-machine.css';
+
+/* Custom Map Styles */
+.leaflet-container {
+  @apply rounded-lg shadow-lg;
+  font-family: inherit;
+}
+
+.leaflet-popup-content {
+  @apply text-sm;
+}
+
+.leaflet-routing-container {
+  @apply bg-white dark:bg-gray-800 rounded-lg shadow-lg;
+}
+
+.leaflet-routing-alt {
+  @apply hover:bg-gray-50 dark:hover:bg-gray-700;
+}
