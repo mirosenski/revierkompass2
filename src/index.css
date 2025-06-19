@@ -1,3 +1,7 @@
+/* Leaflet CSS */
+@import 'leaflet/dist/leaflet.css';
+@import 'leaflet-routing-machine/dist/leaflet-routing-machine.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -19,10 +23,6 @@
     @apply backdrop-blur-md bg-white/10 dark:bg-gray-900/10 border border-white/20;
   }
 }
-
-/* Leaflet CSS */
-@import 'leaflet/dist/leaflet.css';
-@import 'leaflet-routing-machine/dist/leaflet-routing-machine.css';
 
 /* Custom Map Styles */
 .leaflet-container {
