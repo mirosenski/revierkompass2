@@ -1,40 +1,9 @@
 import { useState, useMemo } from 'react'
 import { useStore } from '../store/index'
-import { MapPin, Plus, X, Map, List, Grid3X3 } from 'lucide-react'
+import { MapPin, Plus, X, Map, List } from 'lucide-react'
 import { AddressAutocomplete } from '../components/AddressAutocomplete'
-import { ProfessionalMap } from '../components/Map/ProfessionalMap'
-
-// Erweiterte Polizeireviere Daten für ganz BW
-const POLIZEIREVIERE = [
-  // Stuttgart
-  { id: '1', name: 'Polizeirevier Stuttgart-Mitte', praesidium: 'Stuttgart', lat: 48.7758, lng: 9.1829, adresse: 'Theodor-Heuss-Straße 10' },
-  { id: '2', name: 'Polizeirevier Stuttgart-West', praesidium: 'Stuttgart', lat: 48.7738, lng: 9.1515, adresse: 'Büchsenstraße 35' },
-  { id: '3', name: 'Polizeirevier Stuttgart-Nord', praesidium: 'Stuttgart', lat: 48.7985, lng: 9.1851, adresse: 'Löwentorstraße 11' },
-  { id: '4', name: 'Polizeirevier Stuttgart-Ost', praesidium: 'Stuttgart', lat: 48.7841, lng: 9.2037, adresse: 'Ostendstraße 85' },
-  { id: '5', name: 'Polizeirevier Stuttgart-Süd', praesidium: 'Stuttgart', lat: 48.7651, lng: 9.1728, adresse: 'Heusteigstraße 23' },
-  
-  // Karlsruhe
-  { id: '10', name: 'Polizeirevier Karlsruhe-Marktplatz', praesidium: 'Karlsruhe', lat: 49.0093, lng: 8.4037, adresse: 'Karl-Friedrich-Straße 5' },
-  { id: '11', name: 'Polizeirevier Karlsruhe-West', praesidium: 'Karlsruhe', lat: 49.0138, lng: 8.3654, adresse: 'Sophienstraße 128' },
-  { id: '12', name: 'Polizeirevier Karlsruhe-Südwest', praesidium: 'Karlsruhe', lat: 48.9946, lng: 8.3846, adresse: 'Ettlinger Allee 3' },
-  
-  // Mannheim
-  { id: '20', name: 'Polizeirevier Mannheim-Innenstadt', praesidium: 'Mannheim', lat: 49.4875, lng: 8.4660, adresse: 'L 6, 1' },
-  { id: '21', name: 'Polizeirevier Mannheim-Oststadt', praesidium: 'Mannheim', lat: 49.4815, lng: 8.4939, adresse: 'Lortzingstraße 31' },
-  { id: '22', name: 'Polizeirevier Mannheim-Neckarau', praesidium: 'Mannheim', lat: 49.4542, lng: 8.5067, adresse: 'Angelstraße 23' },
-  
-  // Freiburg
-  { id: '30', name: 'Polizeirevier Freiburg-Nord', praesidium: 'Freiburg', lat: 47.9990, lng: 7.8421, adresse: 'Heinrich-von-Stephan-Straße 2' },
-  { id: '31', name: 'Polizeirevier Freiburg-Süd', praesidium: 'Freiburg', lat: 47.9825, lng: 7.8491, adresse: 'Hofackerstraße 3' },
-  
-  // Weitere Städte
-  { id: '40', name: 'Polizeirevier Heidelberg-Mitte', praesidium: 'Mannheim', lat: 49.4093, lng: 8.6901, adresse: 'Römerstraße 2-4' },
-  { id: '41', name: 'Polizeirevier Heidelberg-Nord', praesidium: 'Mannheim', lat: 49.4251, lng: 8.6756, adresse: 'Dossenheimer Landstraße 33' },
-  { id: '50', name: 'Polizeirevier Heilbronn', praesidium: 'Heilbronn', lat: 49.1427, lng: 9.2109, adresse: 'Bahnhofstraße 27' },
-  { id: '60', name: 'Polizeirevier Ulm', praesidium: 'Ulm', lat: 48.3984, lng: 9.9908, adresse: 'Münsterplatz 50' },
-]
-
-const PRAESIDIEN = [...new Set(POLIZEIREVIERE.map(r => r.praesidium))].sort()
+import { Map as MapComponent } from '../components/Map/Map'
+import { POLIZEIREVIERE, PRAESIDIEN } from '../data/polizeireviere'
 
 export function Step2() {
   const [mode, setMode] = useState<'praesidium' | 'custom'>('praesidium')
@@ -46,9 +15,9 @@ export function Step2() {
   const { 
     selectedTargets, 
     customTargets, 
-    addTarget, 
-    removeTarget, 
+    toggleTarget, 
     addCustomTarget, 
+    removeCustomTarget,
     setStep,
     startAddress 
   } = useStore()
@@ -75,8 +44,6 @@ export function Step2() {
     if (address.trim() && coordinates) {
       addCustomTarget({ 
         street: address, 
-        city: '', 
-        zip: '',
         lat: coordinates.lat,
         lng: coordinates.lng
       })
@@ -85,30 +52,6 @@ export function Step2() {
   }
 
   const canContinue = selectedTargets.length > 0 || customTargets.length > 0
-
-  // Map Locations für Vorschau
-  const mapLocations = [
-    ...(startAddress?.lat && startAddress?.lng ? [{
-      id: 'start',
-      name: 'Start',
-      coordinates: [startAddress.lng, startAddress.lat] as [number, number],
-      type: 'start' as const
-    }] : []),
-    ...filteredReviere
-      .filter(r => selectedTargets.includes(r.id))
-      .map(r => ({
-        id: r.id,
-        name: r.name,
-        coordinates: [r.lng, r.lat] as [number, number],
-        type: 'police' as const
-      })),
-    ...customTargets.map((target, index) => ({
-      id: `custom-${index}`,
-      name: target.street || `Eigenes Ziel ${index + 1}`,
-      coordinates: [target.lng || 9.1829, target.lat || 48.7758] as [number, number],
-      type: 'custom' as const
-    }))
-  ]
 
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -204,11 +147,7 @@ export function Step2() {
                         type="checkbox"
                         checked={selectedTargets.includes(revier.id)}
                         onChange={(e) => {
-                          if (e.target.checked) {
-                            addTarget(revier.id)
-                          } else {
-                            removeTarget(revier.id)
-                          }
+                          toggleTarget(revier.id)
                         }}
                         className="mr-3 h-5 w-5 text-police-blue"
                       />
@@ -266,7 +205,7 @@ export function Step2() {
                       </div>
                       <button
                         onClick={() => {
-                          // TODO: Remove custom target
+                          removeCustomTarget(index)
                         }}
                         className="text-red-500 hover:text-red-700 p-1"
                       >
@@ -291,10 +230,30 @@ export function Step2() {
           <div className="sticky top-4">
             <h3 className="font-semibold mb-3">Kartenvorschau</h3>
             <div className="h-[500px] rounded-lg overflow-hidden shadow-lg border">
-              <ProfessionalMap
-                locations={mapLocations}
-                enableClustering={false}
-                className="w-full h-full"
+              <MapComponent
+                start={startAddress ? {
+                  lat: startAddress.lat,
+                  lng: startAddress.lng,
+                  address: startAddress.street
+                } : undefined}
+                destinations={[
+                  ...filteredReviere
+                    .filter(r => selectedTargets.includes(r.id))
+                    .map(r => ({
+                      id: r.id,
+                      lat: r.lat,
+                      lng: r.lng,
+                      name: r.name,
+                      type: 'police' as const
+                    })),
+                  ...customTargets.map((target, index) => ({
+                    id: `custom-${index}`,
+                    lat: target.lat || 48.7758,
+                    lng: target.lng || 9.1829,
+                    name: target.street,
+                    type: 'custom' as const
+                  }))
+                ]}
               />
             </div>
             <div className="mt-3 text-sm text-gray-600 dark:text-gray-400">

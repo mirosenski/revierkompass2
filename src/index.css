@@ -1,6 +1,5 @@
 /* Leaflet CSS */
 @import 'leaflet/dist/leaflet.css';
-@import 'leaflet-routing-machine/dist/leaflet-routing-machine.css';
 
 @tailwind base;
 @tailwind components;
@@ -32,12 +31,4 @@
 
 .leaflet-popup-content {
   @apply text-sm;
-}
-
-.leaflet-routing-container {
-  @apply bg-white dark:bg-gray-800 rounded-lg shadow-lg;
-}
-
-.leaflet-routing-alt {
-  @apply hover:bg-gray-50 dark:hover:bg-gray-700;
 }
