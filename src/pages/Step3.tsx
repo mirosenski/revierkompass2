@@ -6,6 +6,64 @@ import { POLIZEIREVIERE } from '../data/polizeireviere'
 import * as XLSX from 'exceljs'
 import { saveAs } from 'file-saver'
 
+interface RouteDetails {
+  distance: number
+  duration: number
+  instructions: string[]
+  alternatives: RouteData[]
+  routeGeometry?: {
+    type: string
+    coordinates: [number, number][]
+  }
+  waypoints: Array<{
+    location: [number, number]
+  }>
+  steps: Array<{
+    maneuver: {
+      instruction: string
+    }
+    distance: number
+    duration: number
+  }>
+}
+
+interface RouteData {
+  distance: number
+  duration: number
+  geometry: {
+    type: string
+    coordinates: [number, number][]
+  }
+  summary: {
+    totalDistance: number
+    totalTime: number
+  }
+  legs: Array<{
+    steps: Array<{
+      maneuver: {
+        instruction: string
+      }
+      distance: number
+      duration: number
+    }>
+  }>
+  instructions: string[]
+  waypoints: Array<{
+    location: [number, number]
+  }>
+}
+
+interface ResultItem {
+  id: string
+  name: string
+  adresse: string
+  tel: string
+  distance: number
+  duration: number
+  lat: number
+  lng: number
+}
+
 // Einfache Distanzberechnung (Luftlinie * 1.4 für Straßen-Approximation)
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371 // km
@@ -25,11 +83,11 @@ function estimateDuration(distanceKm: number): number {
 }
 
 export function Step3() {
-  const [results, setResults] = useState<any[]>([])
+  const [results, setResults] = useState<ResultItem[]>([])
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
   const [selectedDestination, setSelectedDestination] = useState<string | null>(null)
-  const [routeDetails, setRouteDetails] = useState<any>(null)
+  const [routeDetails, setRouteDetails] = useState<RouteDetails | null>(null)
   const [showDetailedRoute, setShowDetailedRoute] = useState(false)
   
   const { startAddress, selectedTargets, setStep } = useStore()
@@ -78,7 +136,7 @@ export function Step3() {
     setLoading(false)
   }
 
-  const handleRoutesCalculated = (routes: any[]) => {
+  const handleRoutesCalculated = (routes: RouteData[]) => {
     if (routes && routes.length > 0) {
       const route = routes[0]
       

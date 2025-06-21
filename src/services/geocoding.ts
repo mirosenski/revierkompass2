@@ -12,7 +12,19 @@ export interface GeocodingResult {
     postcode?: string
     city?: string
     state?: string
+    town?: string
+    village?: string
   }
+}
+
+export interface Address {
+  street: string
+  lat: number
+  lng: number
+  city?: string
+  zip?: string
+  state?: string
+  fullAddress?: string
 }
 
 export async function geocodeAddress(query: string): Promise<GeocodingResult[]> {

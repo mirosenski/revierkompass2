@@ -1,6 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { useToast } from '../Toast'
+import { MapErrorBoundary } from '../ErrorBoundary'
 
 // Fix Leaflet default icon
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -19,10 +21,36 @@ interface MapProps {
     name: string
     type: 'police' | 'custom'
   }>
-  onRoutesCalculated?: (routes: any[]) => void
+  onRoutesCalculated?: (routes: RouteData[]) => void
 }
 
-export function Map({ 
+interface RouteData {
+  distance: number
+  duration: number
+  geometry: {
+    type: 'LineString' | 'Point' | 'MultiPoint' | 'MultiLineString' | 'Polygon' | 'MultiPolygon' | 'GeometryCollection' | 'Feature' | 'FeatureCollection'
+    coordinates: [number, number][]
+  }
+  summary: {
+    totalDistance: number
+    totalTime: number
+  }
+  legs: Array<{
+    steps: Array<{
+      maneuver: {
+        instruction: string
+      }
+      distance: number
+      duration: number
+    }>
+  }>
+  instructions: string[]
+  waypoints: Array<{
+    location: [number, number]
+  }>
+}
+
+function MapComponent({ 
   start, 
   destinations = [], 
   onRoutesCalculated
@@ -32,20 +60,82 @@ export function Map({
   const routeLayerRef = useRef<L.LayerGroup | null>(null)
   const markersRef = useRef<L.Marker[]>([])
   const isInitializedRef = useRef(false)
+  const { addToast } = useToast()
+
+  // Calculate distance between two points (Haversine formula)
+  const calculateDistance = useCallback((lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371 // Earth's radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180
+    const dLon = (lon2 - lon1) * Math.PI / 180
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon/2) * Math.sin(dLon/2)
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+    return R * c * 1.4 // Factor 1.4 for road routing approximation
+  }, [])
+
+  // Create a simple fallback route (straight line)
+  const createFallbackRoute = useCallback((startLat: number, startLng: number, endLat: number, endLng: number): RouteData[] => {
+    const distance = calculateDistance(startLat, startLng, endLat, endLng) * 1000 // Convert to meters
+    const duration = distance / 13.89 // Assume 50 km/h average speed (13.89 m/s)
+    
+    return [{
+      distance: distance,
+      duration: duration,
+      geometry: {
+        type: 'LineString',
+        coordinates: [
+          [startLng, startLat],
+          [endLng, endLat]
+        ]
+      },
+      summary: {
+        totalDistance: distance,
+        totalTime: duration
+      },
+      legs: [{
+        steps: [
+          {
+            maneuver: {
+              instruction: 'Geradeaus fahren'
+            },
+            distance: distance,
+            duration: duration
+          }
+        ]
+      }],
+      instructions: ['Geradeaus fahren'],
+      waypoints: [
+        { location: [startLng, startLat] },
+        { location: [endLng, endLat] }
+      ]
+    }]
+  }, [calculateDistance])
 
   // Simple routing function using OSRM
-  const calculateRoute = async (startLat: number, startLng: number, endLat: number, endLng: number) => {
+  const calculateRoute = useCallback(async (startLat: number, startLng: number, endLat: number, endLng: number): Promise<RouteData[] | null> => {
     try {
       // Validate coordinates
       if (!startLat || !startLng || !endLat || !endLng) {
-        console.warn('Invalid coordinates:', { startLat, startLng, endLat, endLng })
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn('Invalid coordinates:', { startLat, startLng, endLat, endLng })
+        }
+        addToast({
+          type: 'warning',
+          title: 'Ungültige Koordinaten',
+          message: 'Die Start- oder Zielkoordinaten sind nicht korrekt.',
+          duration: 4000
+        })
         return null
       }
 
       // Try OSRM first with simplified parameters
       const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`
       
-      console.log('Requesting OSRM route:', osrmUrl)
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Requesting OSRM route:', osrmUrl)
+      }
       
       const response = await fetch(osrmUrl)
       
@@ -53,16 +143,34 @@ export function Map({
         const data = await response.json()
         
         if (data.routes && data.routes.length > 0) {
-          console.log('OSRM route calculated successfully:', data.routes.length, 'routes')
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('OSRM route calculated successfully:', data.routes.length, 'routes')
+          }
+          
+          addToast({
+            type: 'success',
+            title: 'Route berechnet',
+            message: `${data.routes.length} Route(n) erfolgreich berechnet.`,
+            duration: 3000
+          })
           
           // Ensure consistent data structure
-          return data.routes.map((route: any) => ({
-            ...route,
+          return data.routes.map((route: any): RouteData => ({
+            distance: route.distance,
+            duration: route.duration,
+            geometry: route.geometry,
             summary: {
               totalDistance: route.distance,
               totalTime: route.duration,
               ...route.summary
             },
+            legs: route.legs || [{
+              steps: [{
+                maneuver: { instruction: 'Geradeaus fahren' },
+                distance: route.distance,
+                duration: route.duration
+              }]
+            }],
             instructions: route.legs?.[0]?.steps?.map((step: any) => step.maneuver?.instruction) || ['Geradeaus fahren'],
             waypoints: route.waypoints || [
               { location: [startLng, startLat] },
@@ -73,7 +181,17 @@ export function Map({
       }
       
       // If OSRM fails, try GraphHopper (alternative routing service)
-      console.log('OSRM failed, trying GraphHopper...')
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('OSRM failed, trying GraphHopper...')
+      }
+      
+      addToast({
+        type: 'info',
+        title: 'Alternative Route',
+        message: 'Versuche alternative Routing-API...',
+        duration: 2000
+      })
+      
       const graphHopperUrl = `https://graphhopper.com/api/1/route?point=${startLat},${startLng}&point=${endLat},${endLng}&vehicle=car&locale=de&instructions=true&calc_points=true&key=demo`
       
       const ghResponse = await fetch(graphHopperUrl)
@@ -83,7 +201,16 @@ export function Map({
         
         if (ghData.paths && ghData.paths.length > 0) {
           const path = ghData.paths[0]
-          console.log('GraphHopper route calculated successfully')
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('GraphHopper route calculated successfully')
+          }
+          
+          addToast({
+            type: 'success',
+            title: 'Alternative Route gefunden',
+            message: 'Route über GraphHopper berechnet.',
+            duration: 3000
+          })
           
           return [{
             distance: path.distance,
@@ -124,68 +251,37 @@ export function Map({
       }
       
       // If both APIs fail, use fallback
-      console.log('Both APIs failed, using fallback route')
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Both APIs failed, using fallback route')
+      }
+      
+      addToast({
+        type: 'warning',
+        title: 'Fallback-Route',
+        message: 'Routing-APIs nicht verfügbar. Verwende Luftlinie.',
+        duration: 4000
+      })
+      
       return createFallbackRoute(startLat, startLng, endLat, endLng)
       
     } catch (error) {
-      console.error('Error calculating route:', error)
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('Error calculating route:', error)
+      }
+      
+      addToast({
+        type: 'error',
+        title: 'Routing-Fehler',
+        message: 'Fehler beim Berechnen der Route. Verwende Fallback.',
+        duration: 5000
+      })
+      
       return createFallbackRoute(startLat, startLng, endLat, endLng)
     }
-  }
-
-  // Create a simple fallback route (straight line)
-  const createFallbackRoute = (startLat: number, startLng: number, endLat: number, endLng: number) => {
-    const distance = calculateDistance(startLat, startLng, endLat, endLng) * 1000 // Convert to meters
-    const duration = distance / 13.89 // Assume 50 km/h average speed (13.89 m/s)
-    
-    return [{
-      distance: distance,
-      duration: duration,
-      geometry: {
-        type: 'LineString',
-        coordinates: [
-          [startLng, startLat],
-          [endLng, endLat]
-        ]
-      },
-      summary: {
-        totalDistance: distance,
-        totalTime: duration
-      },
-      legs: [{
-        steps: [
-          {
-            maneuver: {
-              instruction: 'Geradeaus fahren'
-            },
-            distance: distance,
-            duration: duration
-          }
-        ]
-      }],
-      instructions: ['Geradeaus fahren'],
-      waypoints: [
-        { location: [startLng, startLat] },
-        { location: [endLng, endLat] }
-      ]
-    }]
-  }
-
-  // Calculate distance between two points (Haversine formula)
-  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-    const R = 6371 // Earth's radius in km
-    const dLat = (lat2 - lat1) * Math.PI / 180
-    const dLon = (lon2 - lon1) * Math.PI / 180
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLon/2) * Math.sin(dLon/2)
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
-    return R * c * 1.4 // Factor 1.4 for road routing approximation
-  }
+  }, [createFallbackRoute, addToast])
 
   // Draw route on map
-  const drawRoute = (routes: any[], map: L.Map) => {
+  const drawRoute = useCallback((routes: RouteData[], map: L.Map) => {
     // Clear existing route
     if (routeLayerRef.current) {
       map.removeLayer(routeLayerRef.current)
@@ -199,7 +295,9 @@ export function Map({
         const weight = index === 0 ? 6 : 4
         const opacity = index === 0 ? 0.8 : 0.6
         
-        console.log('Drawing route:', route.geometry.coordinates.length, 'points')
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('Drawing route:', route.geometry.coordinates.length, 'points')
+        }
         
         const routeLine = L.geoJSON(route.geometry, {
           style: {
@@ -213,11 +311,11 @@ export function Map({
         const distance = route.distance ? (route.distance / 1000).toFixed(1) : 'N/A'
         const duration = route.duration ? Math.round(route.duration / 60) : 'N/A'
         routeLine.bindPopup(`Route ${index + 1}: ${distance} km, ${duration} min`)
-      } else {
+      } else if (process.env.NODE_ENV !== 'production') {
         console.warn('Route has no geometry:', route)
       }
     })
-  }
+  }, [])
 
   // Initialize map
   useEffect(() => {
@@ -261,7 +359,9 @@ export function Map({
           mapRef.current.removeLayer(routeLayerRef.current)
         }
       } catch (error) {
-        console.warn('Error removing route layer:', error)
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn('Error removing route layer:', error)
+        }
       }
       routeLayerRef.current = null
     }
@@ -273,7 +373,9 @@ export function Map({
           mapRef.current.removeLayer(marker)
         }
       } catch (error) {
-        console.warn('Error removing marker:', error)
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn('Error removing marker:', error)
+        }
       }
     })
     markersRef.current = []
@@ -364,19 +466,31 @@ export function Map({
     if (destinations.length > 0) {
       const dest = destinations[0]
       
-      console.log('Calculating route from:', { lat: start.lat, lng: start.lng }, 'to:', { lat: dest.lat, lng: dest.lng })
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Calculating route from:', { lat: start.lat, lng: start.lng }, 'to:', { lat: dest.lat, lng: dest.lng })
+      }
       
       // Use simple routing instead of Leaflet Routing Machine
       calculateRoute(start.lat, start.lng, dest.lat, dest.lng).then(routes => {
         if (routes && routes.length > 0 && mapRef.current) {
-          console.log('Routes calculated, drawing on map:', routes.length, 'routes')
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('Routes calculated, drawing on map:', routes.length, 'routes')
+          }
           drawRoute(routes, mapRef.current)
           onRoutesCalculated?.(routes)
-        } else {
+        } else if (process.env.NODE_ENV !== 'production') {
           console.warn('No routes calculated or map not available')
         }
       }).catch(error => {
-        console.error('Error calculating route:', error)
+        if (process.env.NODE_ENV !== 'production') {
+          console.error('Error calculating route:', error)
+        }
+        addToast({
+          type: 'error',
+          title: 'Routing-Fehler',
+          message: 'Unbehandelter Fehler beim Berechnen der Route.',
+          duration: 5000
+        })
       })
     }
 
@@ -385,7 +499,7 @@ export function Map({
     destinations.forEach(d => bounds.extend([d.lat, d.lng]))
     mapRef.current!.fitBounds(bounds, { padding: [50, 50] })
 
-  }, [start, destinations, onRoutesCalculated])
+  }, [start, destinations, onRoutesCalculated, calculateRoute, drawRoute, addToast])
 
   return (
     <div className="relative w-full h-full">
@@ -401,5 +515,13 @@ export function Map({
         </div>
       </div>
     </div>
+  )
+}
+
+export function Map(props: MapProps) {
+  return (
+    <MapErrorBoundary>
+      <MapComponent {...props} />
+    </MapErrorBoundary>
   )
 }

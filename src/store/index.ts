@@ -4,6 +4,10 @@ interface Address {
   street: string
   lat: number
   lng: number
+  city?: string
+  zip?: string
+  state?: string
+  fullAddress?: string
 }
 
 interface Store {

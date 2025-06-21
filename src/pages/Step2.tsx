@@ -146,7 +146,7 @@ export function Step2() {
                       <input
                         type="checkbox"
                         checked={selectedTargets.includes(revier.id)}
-                        onChange={(e) => {
+                        onChange={() => {
                           toggleTarget(revier.id)
                         }}
                         className="mr-3 h-5 w-5 text-police-blue"
